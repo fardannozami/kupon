@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Gift, Users, Clock, CheckCircle, AlertCircle, Trophy, Crown, Calendar } from 'lucide-react';
-import { getCoupons, addCoupon, Coupon } from '../utils/storage';
+import { getCoupons, addCoupon, subscribeToCoupons } from '../utils/storage';
+import { Coupon } from '../lib/supabase';
 
 const HomePage: React.FC = () => {
   const [formData, setFormData] = useState({
@@ -10,11 +11,37 @@ const HomePage: React.FC = () => {
   });
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [error, setError] = useState('');
-  const [coupons] = useState<Coupon[]>(getCoupons());
+  const [coupons, setCoupons] = useState<Coupon[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  // Load coupons on component mount
+  React.useEffect(() => {
+    const loadCoupons = async () => {
+      try {
+        const data = await getCoupons();
+        setCoupons(data);
+      } catch (error) {
+        console.error('Error loading coupons:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadCoupons();
+
+    // Subscribe to real-time updates
+    const subscription = subscribeToCoupons((updatedCoupons) => {
+      setCoupons(updatedCoupons);
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, []);
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setLoading(true);
 
     // Validasi
     if (!formData.name || !formData.email || !formData.phone) {
@@ -32,22 +59,25 @@ const HomePage: React.FC = () => {
       return;
     }
 
-    // Cek duplikasi email
-    const existingCoupons = getCoupons();
-    if (existingCoupons.some(coupon => coupon.email === formData.email)) {
-      setError('Email sudah terdaftar!');
-      return;
+    try {
+      // Tambah kupon baru
+      await addCoupon({
+        name: formData.name,
+        email: formData.email,
+        phone: formData.phone
+      });
+
+      setIsSubmitted(true);
+      setFormData({ name: '', email: '', phone: '' });
+      
+      // Reload coupons
+      const updatedCoupons = await getCoupons();
+      setCoupons(updatedCoupons);
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Terjadi kesalahan');
+    } finally {
+      setLoading(false);
     }
-
-    // Tambah kupon baru
-    addCoupon({
-      name: formData.name,
-      email: formData.email,
-      phone: formData.phone
-    });
-
-    setIsSubmitted(true);
-    setFormData({ name: '', email: '', phone: '' });
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -113,11 +143,11 @@ const HomePage: React.FC = () => {
                       </div>
                       <h3 className="font-bold text-gray-900 text-lg mb-1">{winner.name}</h3>
                       <div className="bg-gradient-to-r from-blue-600 to-teal-600 text-white px-3 py-1 rounded-full text-sm font-semibold mb-2">
-                        Kupon #{winner.couponNumber}
+                        Kupon #{winner.coupon_number}
                       </div>
                       <div className="flex items-center justify-center text-xs text-gray-500">
                         <Calendar className="h-3 w-3 mr-1" />
-                        <span>{new Date(winner.drawnAt!).toLocaleDateString('id-ID', {
+                        <span>{new Date(winner.drawn_at!).toLocaleDateString('id-ID', {
                           day: 'numeric',
                           month: 'short',
                           year: 'numeric'
@@ -215,9 +245,10 @@ const HomePage: React.FC = () => {
 
               <button
                 type="submit"
-                className="w-full bg-gradient-to-r from-blue-600 to-teal-600 text-white font-semibold py-4 px-6 rounded-lg hover:from-blue-700 hover:to-teal-700 transform hover:scale-105 transition-all duration-200 shadow-lg"
+                disabled={loading}
+                className="w-full bg-gradient-to-r from-blue-600 to-teal-600 text-white font-semibold py-4 px-6 rounded-lg hover:from-blue-700 hover:to-teal-700 transform hover:scale-105 transition-all duration-200 shadow-lg disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
               >
-                Daftar Kupon Sekarang
+                {loading ? 'Mendaftar...' : 'Daftar Kupon Sekarang'}
               </button>
             </form>
           </div>
@@ -252,7 +283,7 @@ const HomePage: React.FC = () => {
                   <Trophy className="h-4 w-4 text-yellow-600" />
                 </div>
                 <p className="text-yellow-700 font-semibold mt-1">{recentWinners[0].name}</p>
-                <p className="text-yellow-600 text-xs">Kupon #{recentWinners[0].couponNumber}</p>
+                <p className="text-yellow-600 text-xs">Kupon #{recentWinners[0].coupon_number}</p>
               </div>
             )}
           </div>
@@ -277,6 +308,9 @@ const HomePage: React.FC = () => {
             </div>
             
             <div className="mt-6 pt-4 border-t border-gray-200">
+              <p className="text-xs text-gray-400 text-center">
+                Admin? Akses melalui <code className="bg-gray-100 px-1 py-0.5 rounded">/admin</code>
+              </p>
             </div>
           </div>
         </div>

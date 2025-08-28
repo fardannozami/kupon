@@ -1,72 +1,146 @@
-export interface Coupon {
-  id: string;
-  couponNumber: number;
-  name: string;
-  email: string;
-  phone: string;
-  status: 'active' | 'drawn';
-  createdAt: string;
-  drawnAt?: string;
-}
+import { supabase, type Coupon } from '../lib/supabase';
 
-const STORAGE_KEY = 'kupon_lucky_data';
-
-export const getCoupons = (): Coupon[] => {
+// Get all coupons from database
+export const getCoupons = async (): Promise<Coupon[]> => {
   try {
-    const data = localStorage.getItem(STORAGE_KEY);
-    return data ? JSON.parse(data) : [];
+    const { data, error } = await supabase
+      .from('coupons')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('Error fetching coupons:', error);
+      return [];
+    }
+
+    return data || [];
   } catch (error) {
     console.error('Error loading coupons:', error);
     return [];
   }
 };
 
-export const saveCoupons = (coupons: Coupon[]): void => {
+// Add new coupon to database
+export const addCoupon = async (couponData: {
+  name: string;
+  email: string;
+  phone: string;
+}): Promise<Coupon | null> => {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(coupons));
+    // Check if email already exists
+    const { data: existingCoupon } = await supabase
+      .from('coupons')
+      .select('email')
+      .eq('email', couponData.email)
+      .single();
+
+    if (existingCoupon) {
+      throw new Error('Email sudah terdaftar!');
+    }
+
+    const { data, error } = await supabase
+      .from('coupons')
+      .insert([{
+        name: couponData.name,
+        email: couponData.email,
+        phone: couponData.phone,
+        status: 'active' as const
+      }])
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Error adding coupon:', error);
+      throw new Error('Gagal menambahkan kupon. Silakan coba lagi.');
+    }
+
+    return data;
   } catch (error) {
-    console.error('Error saving coupons:', error);
+    console.error('Error adding coupon:', error);
+    throw error;
   }
 };
 
-export const addCoupon = (couponData: Omit<Coupon, 'id' | 'couponNumber' | 'status' | 'createdAt'>): Coupon => {
-  const coupons = getCoupons();
-  const maxCouponNumber = coupons.length > 0 ? Math.max(...coupons.map(c => c.couponNumber)) : 0;
-  
-  const newCoupon: Coupon = {
-    id: generateId(),
-    couponNumber: maxCouponNumber + 1,
-    ...couponData,
-    status: 'active',
-    createdAt: new Date().toISOString()
-  };
-  
-  const updatedCoupons = [...coupons, newCoupon];
-  saveCoupons(updatedCoupons);
-  
-  return newCoupon;
-};
-
-export const updateCouponStatus = (couponId: string, status: Coupon['status']): void => {
-  const coupons = getCoupons();
-  const updatedCoupons = coupons.map(coupon => {
-    if (coupon.id === couponId) {
-      return {
-        ...coupon,
-        status,
-        ...(status === 'drawn' && { drawnAt: new Date().toISOString() })
-      };
+// Update coupon status in database
+export const updateCouponStatus = async (
+  couponId: string, 
+  status: Coupon['status']
+): Promise<void> => {
+  try {
+    const updateData: any = { status };
+    
+    if (status === 'drawn') {
+      updateData.drawn_at = new Date().toISOString();
     }
-    return coupon;
-  });
-  
-  saveCoupons(updatedCoupons);
+
+    const { error } = await supabase
+      .from('coupons')
+      .update(updateData)
+      .eq('id', couponId);
+
+    if (error) {
+      console.error('Error updating coupon status:', error);
+      throw new Error('Gagal mengupdate status kupon.');
+    }
+  } catch (error) {
+    console.error('Error updating coupon status:', error);
+    throw error;
+  }
 };
 
-export const clearAllCoupons = (): void => {
-  localStorage.removeItem(STORAGE_KEY);
+// Clear all coupons from database
+export const clearAllCoupons = async (): Promise<void> => {
+  try {
+    const { error } = await supabase
+      .from('coupons')
+      .delete()
+      .neq('id', '00000000-0000-0000-0000-000000000000'); // Delete all records
+
+    if (error) {
+      console.error('Error clearing coupons:', error);
+      throw new Error('Gagal menghapus semua kupon.');
+    }
+
+    // Reset sequence
+    const { error: seqError } = await supabase.rpc('reset_coupon_sequence');
+    if (seqError) {
+      console.warn('Warning: Could not reset coupon sequence:', seqError);
+    }
+  } catch (error) {
+    console.error('Error clearing coupons:', error);
+    throw error;
+  }
 };
 
-const generateId = (): string => {
-  return Date.now().toString(36) + Math.random().toString(36).substr(2);
+// Get coupons with real-time subscription
+export const subscribeToCoupons = (callback: (coupons: Coupon[]) => void) => {
+  const subscription = supabase
+    .channel('coupons_changes')
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'coupons'
+      },
+      async () => {
+        // Fetch updated data when changes occur
+        const coupons = await getCoupons();
+        callback(coupons);
+      }
+    )
+    .subscribe();
+
+  return subscription;
+};
+
+// Utility function to check database connection
+export const checkDatabaseConnection = async (): Promise<boolean> => {
+  try {
+    const { error } = await supabase.from('coupons').select('count').limit(1);
+    return !error;
+  } catch (error) {
+    console.error('Database connection failed:', error);
+    return false;
+  }
 };

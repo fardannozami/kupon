@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Trophy, Users, Gift, Shuffle, LogOut, RefreshCw, Crown, Calendar, Mail, Phone } from 'lucide-react';
-import { getCoupons, updateCouponStatus, clearAllCoupons, Coupon } from '../utils/storage';
+import { getCoupons, updateCouponStatus, clearAllCoupons, subscribeToCoupons } from '../utils/storage';
+import { Coupon } from '../lib/supabase';
 
 interface AdminDashboardProps {
   onLogout: () => void;
@@ -11,15 +12,36 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
   const [isDrawing, setIsDrawing] = useState(false);
   const [winner, setWinner] = useState<Coupon | null>(null);
   const [drawHistory, setDrawHistory] = useState<Coupon[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
   useEffect(() => {
     loadCoupons();
+
+    // Subscribe to real-time updates
+    const subscription = subscribeToCoupons((updatedCoupons) => {
+      setCoupons(updatedCoupons);
+      setDrawHistory(updatedCoupons.filter(c => c.status === 'drawn'));
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
   }, []);
 
-  const loadCoupons = () => {
-    const allCoupons = getCoupons();
-    setCoupons(allCoupons);
-    setDrawHistory(allCoupons.filter(c => c.status === 'drawn'));
+  const loadCoupons = async () => {
+    try {
+      setLoading(true);
+      const allCoupons = await getCoupons();
+      setCoupons(allCoupons);
+      setDrawHistory(allCoupons.filter(c => c.status === 'drawn'));
+      setError('');
+    } catch (error) {
+      console.error('Error loading coupons:', error);
+      setError('Gagal memuat data kupon');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleDraw = async () => {
@@ -32,31 +54,48 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
 
     setIsDrawing(true);
     setWinner(null);
+    setError('');
 
-    // Simulasi animasi undian
-    for (let i = 0; i < 20; i++) {
-      const randomCoupon = activeCoupons[Math.floor(Math.random() * activeCoupons.length)];
-      setWinner(randomCoupon);
-      await new Promise(resolve => setTimeout(resolve, 100));
+    try {
+      // Simulasi animasi undian
+      for (let i = 0; i < 20; i++) {
+        const randomCoupon = activeCoupons[Math.floor(Math.random() * activeCoupons.length)];
+        setWinner(randomCoupon);
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+
+      // Pilih pemenang final
+      const finalWinner = activeCoupons[Math.floor(Math.random() * activeCoupons.length)];
+      setWinner(finalWinner);
+      
+      // Update status kupon
+      await updateCouponStatus(finalWinner.id, 'drawn');
+      
+      // Reload data
+      await loadCoupons();
+    } catch (error) {
+      console.error('Error during draw:', error);
+      setError('Gagal melakukan undian. Silakan coba lagi.');
+    } finally {
+      setIsDrawing(false);
     }
-
-    // Pilih pemenang final
-    const finalWinner = activeCoupons[Math.floor(Math.random() * activeCoupons.length)];
-    setWinner(finalWinner);
-    
-    // Update status kupon
-    updateCouponStatus(finalWinner.id, 'drawn');
-    
-    setIsDrawing(false);
-    loadCoupons();
   };
 
-  const handleReset = () => {
+  const handleReset = async () => {
     if (confirm('Apakah Anda yakin ingin menghapus semua data kupon?')) {
-      clearAllCoupons();
-      setCoupons([]);
-      setDrawHistory([]);
-      setWinner(null);
+      try {
+        setLoading(true);
+        await clearAllCoupons();
+        setCoupons([]);
+        setDrawHistory([]);
+        setWinner(null);
+        setError('');
+      } catch (error) {
+        console.error('Error resetting coupons:', error);
+        setError('Gagal menghapus data kupon');
+      } finally {
+        setLoading(false);
+      }
     }
   };
 
@@ -79,6 +118,23 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
           <span>Logout</span>
         </button>
       </div>
+
+      {/* Error Message */}
+      {error && (
+        <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
+          <p className="text-red-700">{error}</p>
+        </div>
+      )}
+
+      {/* Loading State */}
+      {loading && (
+        <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+          <p className="text-blue-700 flex items-center">
+            <RefreshCw className="h-4 w-4 animate-spin mr-2" />
+            Memuat data...
+          </p>
+        </div>
+      )}
 
       {/* Stats Cards */}
       <div className="grid md:grid-cols-4 gap-6 mb-8">
@@ -141,7 +197,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                 <div className="text-center">
                   <p className="text-lg font-semibold text-gray-900">{winner.name}</p>
                   <p className="text-gray-600">{winner.email}</p>
-                  <p className="text-sm text-gray-500">Kupon #{winner.couponNumber}</p>
+                  <p className="text-sm text-gray-500">Kupon #{winner.coupon_number}</p>
                 </div>
               </div>
             )}
@@ -158,9 +214,10 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
               
               <button
                 onClick={loadCoupons}
-                className="px-6 py-4 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors flex items-center space-x-2"
+                disabled={loading}
+                className="px-6 py-4 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors flex items-center space-x-2 disabled:opacity-50"
               >
-                <RefreshCw className="h-5 w-5" />
+                <RefreshCw className={`h-5 w-5 ${loading ? 'animate-spin' : ''}`} />
                 <span>Refresh</span>
               </button>
             </div>
@@ -181,7 +238,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                   <div key={coupon.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
                     <div className="flex items-center space-x-3">
                       <div className="bg-blue-600 text-white w-8 h-8 rounded-full flex items-center justify-center text-sm font-semibold">
-                        {coupon.couponNumber}
+                        {coupon.coupon_number}
                       </div>
                       <div>
                         <p className="font-medium text-gray-900">{coupon.name}</p>
@@ -199,7 +256,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                     </div>
                     <div className="flex items-center space-x-2 text-sm text-gray-500">
                       <Calendar className="h-4 w-4" />
-                      <span>{new Date(coupon.createdAt).toLocaleDateString('id-ID')}</span>
+                      <span>{new Date(coupon.created_at).toLocaleDateString('id-ID')}</span>
                     </div>
                   </div>
                 ))
@@ -220,15 +277,15 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
               {drawHistory.length === 0 ? (
                 <p className="text-gray-500 text-center py-4">Belum ada pemenang</p>
               ) : (
-                drawHistory.reverse().map((winner, index) => (
+                drawHistory.reverse().map((winner, _) => (
                   <div key={winner.id} className="p-3 bg-gradient-to-r from-yellow-50 to-orange-50 border border-yellow-200 rounded-lg">
                     <div className="flex items-center space-x-2 mb-1">
                       <Crown className="h-4 w-4 text-yellow-600" />
                       <span className="font-medium text-gray-900">{winner.name}</span>
                     </div>
-                    <p className="text-sm text-gray-600">#{winner.couponNumber}</p>
+                    <p className="text-sm text-gray-600">#{winner.coupon_number}</p>
                     <p className="text-xs text-gray-500">
-                      {new Date(winner.drawnAt!).toLocaleString('id-ID')}
+                      {new Date(winner.drawn_at!).toLocaleString('id-ID')}
                     </p>
                   </div>
                 ))
@@ -241,9 +298,10 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
             <h3 className="text-lg font-semibold text-gray-900 mb-4">Aksi Admin</h3>
             <button
               onClick={handleReset}
-              className="w-full bg-red-600 text-white font-semibold py-3 px-4 rounded-lg hover:bg-red-700 transition-colors"
+              disabled={loading}
+              className="w-full bg-red-600 text-white font-semibold py-3 px-4 rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Reset Semua Data
+              {loading ? 'Menghapus...' : 'Reset Semua Data'}
             </button>
             <p className="text-xs text-gray-500 mt-2">
               Hati-hati! Aksi ini akan menghapus semua data kupon dan tidak dapat dikembalikan.
