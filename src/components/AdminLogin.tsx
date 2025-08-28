@@ -94,7 +94,10 @@ const AdminLogin: React.FC<AdminLoginProps> = ({ onLogin }) => {
 
           <div className="mt-6 text-center">
             <p className="text-sm text-gray-500">
-              Demo: username: <code className="bg-gray-100 px-2 py-1 rounded">admin</code>, password: <code className="bg-gray-100 px-2 py-1 rounded">admin123</code>
+              Akses admin melalui URL: <code className="bg-gray-100 px-2 py-1 rounded">/admin</code>
+            </p>
+            <p className="text-xs text-gray-400 mt-2">
+              Demo: username: <code className="bg-gray-100 px-1 py-0.5 rounded text-xs">admin</code>, password: <code className="bg-gray-100 px-1 py-0.5 rounded text-xs">admin123</code>
             </p>
           </div>
         </div>

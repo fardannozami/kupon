@@ -275,6 +275,9 @@ const HomePage: React.FC = () => {
                 <p className="text-gray-700">Tunggu pengumuman pemenang</p>
               </div>
             </div>
+            
+            <div className="mt-6 pt-4 border-t border-gray-200">
+            </div>
           </div>
         </div>
       </div>
