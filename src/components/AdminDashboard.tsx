@@ -1,6 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { Trophy, Users, Gift, Shuffle, LogOut, RefreshCw, Crown, Calendar, Mail, Phone } from 'lucide-react';
-import { getCoupons, updateCouponStatus, clearAllCoupons, subscribeToCoupons } from '../utils/storage';
+import { Trophy, Users, Gift, Shuffle, LogOut, RefreshCw, Crown, Calendar, Mail, Phone, Trash2, RotateCcw } from 'lucide-react';
+import { 
+  getCoupons, 
+  updateCouponStatus, 
+  clearAllCoupons, 
+  subscribeToCoupons, 
+  getCouponStats,
+  getRecentWinners,
+  deleteCoupon 
+} from '../utils/storage';
 import { Coupon } from '../lib/supabase';
 
 interface AdminDashboardProps {
@@ -14,6 +22,13 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
   const [drawHistory, setDrawHistory] = useState<Coupon[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [stats, setStats] = useState({
+    total: 0,
+    active: 0,
+    drawn: 0,
+    participationRate: 0
+  });
+  const [selectedCoupons, setSelectedCoupons] = useState<string[]>([]);
 
   useEffect(() => {
     loadCoupons();
@@ -34,7 +49,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
       setLoading(true);
       const allCoupons = await getCoupons();
       setCoupons(allCoupons);
-      setDrawHistory(allCoupons.filter(c => c.status === 'drawn'));
+      const winners = await getRecentWinners(10);
+      setDrawHistory(winners);
       setError('');
     } catch (error) {
       console.error('Error loading coupons:', error);
@@ -44,6 +60,26 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     }
   };
 
+  const loadStats = async () => {
+    try {
+      const statsData = await getCouponStats();
+      setStats(statsData);
+    } catch (error) {
+      console.error('Error loading stats:', error);
+    }
+  };
+
+  const updateStats = (coupons: Coupon[]) => {
+    const activeCoupons = coupons.filter(c => c.status === 'active');
+    const drawnCoupons = coupons.filter(c => c.status === 'drawn');
+    
+    setStats({
+      total: coupons.length,
+      active: activeCoupons.length,
+      drawn: drawnCoupons.length,
+      participationRate: coupons.length > 0 ? Math.round((drawnCoupons.length / coupons.length) * 100) : 0
+    });
+  };
   const handleDraw = async () => {
     const activeCoupons = coupons.filter(c => c.status === 'active');
     
@@ -73,6 +109,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
       
       // Reload data
       await loadCoupons();
+      await loadStats();
     } catch (error) {
       console.error('Error during draw:', error);
       setError('Gagal melakukan undian. Silakan coba lagi.');
@@ -82,14 +119,17 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
   };
 
   const handleReset = async () => {
-    if (confirm('Apakah Anda yakin ingin menghapus semua data kupon?')) {
+    if (confirm('Apakah Anda yakin ingin menghapus semua data kupon? Aksi ini tidak dapat dibatalkan!')) {
       try {
         setLoading(true);
         await clearAllCoupons();
         setCoupons([]);
         setDrawHistory([]);
         setWinner(null);
+        setStats({ total: 0, active: 0, drawn: 0, participationRate: 0 });
+        setSelectedCoupons([]);
         setError('');
+        alert('Semua data kupon berhasil dihapus dan nomor kupon direset ke 1.');
       } catch (error) {
         console.error('Error resetting coupons:', error);
         setError('Gagal menghapus data kupon');
@@ -99,8 +139,36 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     }
   };
 
+  const handleDeleteCoupon = async (couponId: string) => {
+    if (confirm('Apakah Anda yakin ingin menghapus kupon ini?')) {
+      try {
+        await deleteCoupon(couponId);
+        await loadCoupons();
+        await loadStats();
+        setError('');
+      } catch (error) {
+        console.error('Error deleting coupon:', error);
+        setError('Gagal menghapus kupon');
+      }
+    }
+  };
+
+  const handleSelectCoupon = (couponId: string) => {
+    setSelectedCoupons(prev => 
+      prev.includes(couponId) 
+        ? prev.filter(id => id !== couponId)
+        : [...prev, couponId]
+    );
+  };
+
+  const handleSelectAll = () => {
+    const activeCouponIds = activeCoupons.map(c => c.id);
+    setSelectedCoupons(
+      selectedCoupons.length === activeCouponIds.length ? [] : activeCouponIds
+    );
+  };
+
   const activeCoupons = coupons.filter(c => c.status === 'active');
-  const totalCoupons = coupons.length;
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -142,7 +210,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-gray-600 text-sm">Total Kupon</p>
-              <p className="text-3xl font-bold text-blue-600">{totalCoupons}</p>
+              <p className="text-3xl font-bold text-blue-600">{stats.total}</p>
             </div>
             <Users className="h-8 w-8 text-blue-600" />
           </div>
@@ -152,7 +220,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-gray-600 text-sm">Kupon Aktif</p>
-              <p className="text-3xl font-bold text-green-600">{activeCoupons.length}</p>
+              <p className="text-3xl font-bold text-green-600">{stats.active}</p>
             </div>
             <Gift className="h-8 w-8 text-green-600" />
           </div>
@@ -162,7 +230,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-gray-600 text-sm">Sudah Diundi</p>
-              <p className="text-3xl font-bold text-orange-600">{drawHistory.length}</p>
+              <p className="text-3xl font-bold text-orange-600">{stats.drawn}</p>
             </div>
             <Trophy className="h-8 w-8 text-orange-600" />
           </div>
@@ -172,9 +240,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-gray-600 text-sm">Tingkat Partisipasi</p>
-              <p className="text-3xl font-bold text-purple-600">
-                {totalCoupons > 0 ? Math.round((drawHistory.length / totalCoupons) * 100) : 0}%
-              </p>
+              <p className="text-3xl font-bold text-purple-600">{stats.participationRate}%</p>
             </div>
             <Crown className="h-8 w-8 text-purple-600" />
           </div>
@@ -229,14 +295,41 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
 
           {/* Active Coupons List */}
           <div className="bg-white rounded-xl shadow-lg border border-gray-100 p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Kupon Aktif ({activeCoupons.length})</h3>
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-semibold text-gray-900">Kupon Aktif ({stats.active})</h3>
+              {activeCoupons.length > 0 && (
+                <div className="flex items-center space-x-2">
+                  <button
+                    onClick={handleSelectAll}
+                    className="text-sm text-blue-600 hover:text-blue-800"
+                  >
+                    {selectedCoupons.length === activeCoupons.length ? 'Batal Pilih Semua' : 'Pilih Semua'}
+                  </button>
+                  {selectedCoupons.length > 0 && (
+                    <span className="text-sm text-gray-500">
+                      ({selectedCoupons.length} dipilih)
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
             <div className="space-y-3 max-h-96 overflow-y-auto">
               {activeCoupons.length === 0 ? (
                 <p className="text-gray-500 text-center py-8">Tidak ada kupon aktif</p>
               ) : (
                 activeCoupons.map((coupon) => (
-                  <div key={coupon.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                  <div key={coupon.id} className={`flex items-center justify-between p-4 rounded-lg border transition-colors ${
+                    selectedCoupons.includes(coupon.id) 
+                      ? 'bg-blue-50 border-blue-200' 
+                      : 'bg-gray-50 border-gray-200 hover:bg-gray-100'
+                  }`}>
                     <div className="flex items-center space-x-3">
+                      <input
+                        type="checkbox"
+                        checked={selectedCoupons.includes(coupon.id)}
+                        onChange={() => handleSelectCoupon(coupon.id)}
+                        className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                      />
                       <div className="bg-blue-600 text-white w-8 h-8 rounded-full flex items-center justify-center text-sm font-semibold">
                         {coupon.coupon_number}
                       </div>
@@ -254,9 +347,18 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                         </div>
                       </div>
                     </div>
-                    <div className="flex items-center space-x-2 text-sm text-gray-500">
-                      <Calendar className="h-4 w-4" />
-                      <span>{new Date(coupon.created_at).toLocaleDateString('id-ID')}</span>
+                    <div className="flex items-center space-x-2">
+                      <div className="flex items-center space-x-2 text-sm text-gray-500">
+                        <Calendar className="h-4 w-4" />
+                        <span>{new Date(coupon.created_at).toLocaleDateString('id-ID')}</span>
+                      </div>
+                      <button
+                        onClick={() => handleDeleteCoupon(coupon.id)}
+                        className="p-1 text-red-600 hover:text-red-800 hover:bg-red-50 rounded transition-colors"
+                        title="Hapus kupon"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
                     </div>
                   </div>
                 ))
@@ -271,15 +373,15 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
           <div className="bg-white rounded-xl shadow-lg border border-gray-100 p-6">
             <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
               <Trophy className="h-5 w-5 text-orange-600 mr-2" />
-              Riwayat Pemenang
+              Riwayat Pemenang ({stats.drawn})
             </h3>
             <div className="space-y-3 max-h-64 overflow-y-auto">
               {drawHistory.length === 0 ? (
                 <p className="text-gray-500 text-center py-4">Belum ada pemenang</p>
               ) : (
-                drawHistory.reverse().map((winner, _) => (
+                drawHistory.map((winner) => (
                   <div key={winner.id} className="p-3 bg-gradient-to-r from-yellow-50 to-orange-50 border border-yellow-200 rounded-lg">
-                    <div className="flex items-center space-x-2 mb-1">
+                    <div className="flex items-center space-x-3">
                       <Crown className="h-4 w-4 text-yellow-600" />
                       <span className="font-medium text-gray-900">{winner.name}</span>
                     </div>
@@ -296,16 +398,55 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
           {/* Actions */}
           <div className="bg-white rounded-xl shadow-lg border border-gray-100 p-6">
             <h3 className="text-lg font-semibold text-gray-900 mb-4">Aksi Admin</h3>
-            <button
-              onClick={handleReset}
-              disabled={loading}
-              className="w-full bg-red-600 text-white font-semibold py-3 px-4 rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {loading ? 'Menghapus...' : 'Reset Semua Data'}
-            </button>
+            <div className="space-y-3">
+              <button
+                onClick={loadCoupons}
+                disabled={loading}
+                className="w-full bg-blue-600 text-white font-semibold py-3 px-4 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2"
+              >
+                <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+                <span>{loading ? 'Memuat...' : 'Refresh Data'}</span>
+              </button>
+              
+              <button
+                onClick={handleReset}
+                disabled={loading}
+                className="w-full bg-red-600 text-white font-semibold py-3 px-4 rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2"
+              >
+                <RotateCcw className="h-4 w-4" />
+                <span>{loading ? 'Menghapus...' : 'Reset Semua Data'}</span>
+              </button>
+            </div>
             <p className="text-xs text-gray-500 mt-2">
-              Hati-hati! Aksi ini akan menghapus semua data kupon dan tidak dapat dikembalikan.
+              Reset akan menghapus semua data kupon dan mereset nomor kupon ke 1.
             </p>
+          </div>
+
+          {/* Database Status */}
+          <div className="bg-white rounded-xl shadow-lg border border-gray-100 p-6">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">Status Database</h3>
+            <div className="space-y-2">
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-gray-600">Koneksi</span>
+                <div className="flex items-center space-x-2">
+                  <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                  <span className="text-sm text-green-600">Terhubung</span>
+                </div>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-gray-600">Real-time</span>
+                <div className="flex items-center space-x-2">
+                  <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                  <span className="text-sm text-green-600">Aktif</span>
+                </div>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-gray-600">Terakhir Update</span>
+                <span className="text-sm text-gray-500">
+                  {new Date().toLocaleTimeString('id-ID')}
+                </span>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -314,3 +455,4 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
 };
 
 export default AdminDashboard;
+                    </div>

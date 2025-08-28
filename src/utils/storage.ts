@@ -91,20 +91,22 @@ export const updateCouponStatus = async (
 // Clear all coupons from database
 export const clearAllCoupons = async (): Promise<void> => {
   try {
-    const { error } = await supabase
+    // First, delete all coupons
+    const { error: deleteError } = await supabase
       .from('coupons')
       .delete()
-      .neq('id', '00000000-0000-0000-0000-000000000000'); // Delete all records
+      .gte('coupon_number', 1); // Delete all records where coupon_number >= 1
 
-    if (error) {
-      console.error('Error clearing coupons:', error);
+    if (deleteError) {
+      console.error('Error clearing coupons:', deleteError);
       throw new Error('Gagal menghapus semua kupon.');
     }
 
-    // Reset sequence
-    const { error: seqError } = await supabase.rpc('reset_coupon_sequence');
+    // Reset sequence using the function from migration
+    const { error: seqError } = await supabase.rpc('reset_coupon_number_sequence');
     if (seqError) {
       console.warn('Warning: Could not reset coupon sequence:', seqError);
+      // Don't throw error here as the main deletion succeeded
     }
   } catch (error) {
     console.error('Error clearing coupons:', error);
@@ -112,6 +114,96 @@ export const clearAllCoupons = async (): Promise<void> => {
   }
 };
 
+// Get statistics for admin dashboard
+export const getCouponStats = async () => {
+  try {
+    const coupons = await getCoupons();
+    const activeCoupons = coupons.filter(c => c.status === 'active');
+    const drawnCoupons = coupons.filter(c => c.status === 'drawn');
+    
+    return {
+      total: coupons.length,
+      active: activeCoupons.length,
+      drawn: drawnCoupons.length,
+      participationRate: coupons.length > 0 ? Math.round((drawnCoupons.length / coupons.length) * 100) : 0
+    };
+  } catch (error) {
+    console.error('Error getting coupon stats:', error);
+    return {
+      total: 0,
+      active: 0,
+      drawn: 0,
+      participationRate: 0
+    };
+  }
+};
+
+// Get recent winners for admin dashboard
+export const getRecentWinners = async (limit: number = 10): Promise<Coupon[]> => {
+  try {
+    const { data, error } = await supabase
+      .from('coupons')
+      .select('*')
+      .eq('status', 'drawn')
+      .order('drawn_at', { ascending: false })
+      .limit(limit);
+
+    if (error) {
+      console.error('Error fetching recent winners:', error);
+      return [];
+    }
+
+    return data || [];
+  } catch (error) {
+    console.error('Error loading recent winners:', error);
+    return [];
+  }
+};
+
+// Bulk update coupon status (for admin operations)
+export const bulkUpdateCouponStatus = async (
+  couponIds: string[], 
+  status: Coupon['status']
+): Promise<void> => {
+  try {
+    const updateData: any = { status };
+    
+    if (status === 'drawn') {
+      updateData.drawn_at = new Date().toISOString();
+    }
+
+    const { error } = await supabase
+      .from('coupons')
+      .update(updateData)
+      .in('id', couponIds);
+
+    if (error) {
+      console.error('Error bulk updating coupon status:', error);
+      throw new Error('Gagal mengupdate status kupon secara bulk.');
+    }
+  } catch (error) {
+    console.error('Error bulk updating coupon status:', error);
+    throw error;
+  }
+};
+
+// Delete specific coupon (for admin)
+export const deleteCoupon = async (couponId: string): Promise<void> => {
+  try {
+    const { error } = await supabase
+      .from('coupons')
+      .delete()
+      .eq('id', couponId);
+
+    if (error) {
+      console.error('Error deleting coupon:', error);
+      throw new Error('Gagal menghapus kupon.');
+    }
+  } catch (error) {
+    console.error('Error deleting coupon:', error);
+    throw error;
+  }
+};
 // Get coupons with real-time subscription
 export const subscribeToCoupons = (callback: (coupons: Coupon[]) => void) => {
   const subscription = supabase
