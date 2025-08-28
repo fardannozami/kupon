@@ -118,6 +118,7 @@ export const clearAllCoupons = async (): Promise<void> => {
 export const getCouponStats = async () => {
   try {
     const coupons = await getCoupons();
+    console.log('Coupons:', coupons);
     const activeCoupons = coupons.filter(c => c.status === 'active');
     const drawnCoupons = coupons.filter(c => c.status === 'drawn');
     

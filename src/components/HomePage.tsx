@@ -46,16 +46,19 @@ const HomePage: React.FC = () => {
     // Validasi
     if (!formData.name || !formData.email || !formData.phone) {
       setError('Semua field harus diisi!');
+      setLoading(false);
       return;
     }
 
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
       setError('Format email tidak valid!');
+      setLoading(false);
       return;
     }
 
     if (!/^[\d\+\-\s\(\)]{10,}$/.test(formData.phone)) {
       setError('Format nomor telepon tidak valid!');
+      setLoading(false);
       return;
     }
 
@@ -69,7 +72,7 @@ const HomePage: React.FC = () => {
 
       setIsSubmitted(true);
       setFormData({ name: '', email: '', phone: '' });
-      
+
       // Reload coupons
       const updatedCoupons = await getCoupons();
       setCoupons(updatedCoupons);
@@ -133,11 +136,10 @@ const HomePage: React.FC = () => {
                   <div key={winner.id} className="bg-white rounded-lg shadow-md border border-yellow-200 p-4 transform hover:scale-105 transition-all duration-200">
                     <div className="text-center">
                       <div className="flex justify-center mb-3">
-                        <div className={`p-2 rounded-full ${
-                          index === 0 ? 'bg-yellow-500' : 
-                          index === 1 ? 'bg-gray-400' : 
-                          index === 2 ? 'bg-orange-600' : 'bg-blue-500'
-                        }`}>
+                        <div className={`p-2 rounded-full ${index === 0 ? 'bg-yellow-500' :
+                          index === 1 ? 'bg-gray-400' :
+                            index === 2 ? 'bg-orange-600' : 'bg-blue-500'
+                          }`}>
                           <Crown className="h-5 w-5 text-white" />
                         </div>
                       </div>
@@ -275,7 +277,7 @@ const HomePage: React.FC = () => {
                 <span className="text-2xl font-bold text-orange-600">{drawnCoupons.length}</span>
               </div>
             </div>
-            
+
             {recentWinners.length > 0 && (
               <div className="mt-4 p-3 bg-yellow-50 rounded-lg border border-yellow-200">
                 <div className="flex items-center justify-between">
@@ -306,7 +308,7 @@ const HomePage: React.FC = () => {
                 <p className="text-gray-700">Tunggu pengumuman pemenang</p>
               </div>
             </div>
-            
+
             <div className="mt-6 pt-4 border-t border-gray-200">
               <p className="text-xs text-gray-400 text-center">
                 Admin? Akses melalui <code className="bg-gray-100 px-1 py-0.5 rounded">/admin</code>

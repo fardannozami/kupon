@@ -32,6 +32,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
 
   useEffect(() => {
     loadCoupons();
+    loadStats();
 
     // Subscribe to real-time updates
     const subscription = subscribeToCoupons((updatedCoupons) => {
@@ -48,6 +49,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     try {
       setLoading(true);
       const allCoupons = await getCoupons();
+      console.log('All Coupons:', allCoupons);
       setCoupons(allCoupons);
       const winners = await getRecentWinners(10);
       setDrawHistory(winners);
@@ -63,23 +65,13 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
   const loadStats = async () => {
     try {
       const statsData = await getCouponStats();
+      console.log('Stats:', statsData);
       setStats(statsData);
     } catch (error) {
       console.error('Error loading stats:', error);
     }
   };
 
-  const updateStats = (coupons: Coupon[]) => {
-    const activeCoupons = coupons.filter(c => c.status === 'active');
-    const drawnCoupons = coupons.filter(c => c.status === 'drawn');
-    
-    setStats({
-      total: coupons.length,
-      active: activeCoupons.length,
-      drawn: drawnCoupons.length,
-      participationRate: coupons.length > 0 ? Math.round((drawnCoupons.length / coupons.length) * 100) : 0
-    });
-  };
   const handleDraw = async () => {
     const activeCoupons = coupons.filter(c => c.status === 'active');
     
