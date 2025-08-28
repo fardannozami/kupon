@@ -1,0 +1,15 @@
+[build]
+  command = "npm run build"
+  publish = "dist" # ganti kalau folder build lo beda (misal: build, out, dsb)
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+# Contoh kalau punya API backend di Netlify Functions atau server eksternal:
+# [[redirects]]
+#   from = "/api/*"
+#   to = "http://localhost:3000/:splat"
+#   status = 200
+#   force = true
